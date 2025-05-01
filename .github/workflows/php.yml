@@ -14,59 +14,86 @@ jobs:
         php-version: '8.2'
         extensions: mysqli
 
-    - name: Test MySQL Connection
+    - name: Network Diagnostics
+      env:
+        DB_HOST: ${{ secrets.DB_HOST }}
+      run: |
+        echo "🔍 Network Diagnostics"
+        echo "1. DNS Resolution:"
+        host "$DB_HOST"
+        echo -e "\n2. Ping Test:"
+        ping -c 4 "$DB_HOST" || echo "Ping failed (may be blocked)"
+        echo -e "\n3. Port 3306 Test:"
+        timeout 5 nc -zvw3 "$DB_HOST" 3306 && echo "✅ Port open" || echo "❌ Port blocked"
+        echo -e "\n4. Traceroute:"
+        traceroute "$DB_HOST" -w 1 -m 5 || echo "Traceroute not available"
+
+    - name: Verify MySQL Connection
       env:
         DB_HOST: ${{ secrets.DB_HOST }}
         DB_USER: ${{ secrets.DB_USER }}
         DB_PASS: ${{ secrets.DB_PASS }}
         DB_NAME: ${{ secrets.DB_NAME }}
       run: |
-        # 1. Verify DNS resolution
-        echo "🔍 Resolving $DB_HOST..."
-        host $DB_HOST || true
-        
-        # 2. Test basic connectivity
-        echo "🔌 Testing connection to $DB_HOST:3306..."
-        timeout 5 bash -c "cat < /dev/null > /dev/tcp/$DB_HOST/3306" && \
-          echo "✅ Port 3306 is open" || \
-          echo "❌ Could not connect to port 3306"
-        
-        # 3. Advanced connection test
-        php <<"ENDOFPHP"
+        cat > mysql_test.php << 'PHPCODE'
         <?php
-        \$start = microtime(true);
-        \$host = getenv('DB_HOST');
+        // Enhanced connection test with full diagnostics
+        $host = getenv('DB_HOST');
+        $user = getenv('DB_USER');
+        $pass = getenv('DB_PASS');
+        $db   = getenv('DB_NAME');
         
-        echo "⌛ Attempting to connect to MySQL at {\$host}...\n";
+        echo "=== MySQL Connection Test ===\n";
+        echo "Host: $host\nUser: $user\nDatabase: $db\n";
+        
+        // Test with both mysqli and PDO
+        $start = microtime(true);
         
         try {
-            \$conn = new mysqli(
-                \$host,
-                getenv('DB_USER'),
-                getenv('DB_PASS'),
-                getenv('DB_NAME'),
-                3306, // Port
-                10    // Timeout (seconds)
+            echo "\n🔧 Testing mysqli connection...\n";
+            $mysqli = new mysqli($host, $user, $pass, $db, 3306, 10);
+            
+            if ($mysqli->connect_error) {
+                throw new Exception("mysqli: " . $mysqli->connect_error);
+            }
+            
+            echo "✅ mysqli connected! Version: " . $mysqli->server_version . "\n";
+            $mysqli->close();
+            
+            echo "\n🔧 Testing PDO connection...\n";
+            $pdo = new PDO(
+                "mysql:host=$host;dbname=$db;charset=utf8mb4",
+                $user,
+                $pass,
+                [
+                    PDO::ATTR_TIMEOUT => 10,
+                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
+                ]
             );
+            echo "✅ PDO connected!\n";
             
-            if (\$conn->connect_error) {
-                throw new Exception("Connection failed after " . 
-                    round(microtime(true)-\$start, 2) . "s: " . \$conn->connect_error);
+        } catch (Exception $e) {
+            // Detailed error analysis
+            $error = $e->getMessage();
+            
+            if (strpos($error, "No such file or directory") !== false) {
+                $error .= "\n💡 This usually means:\n"
+                       . "1. MySQL isn't running on the specified host\n"
+                       . "2. The hostname is incorrect\n"
+                       . "3. Port 3306 is blocked by firewall";
+            } elseif (strpos($error, "Connection refused") !== false) {
+                $error .= "\n💡 This usually means:\n"
+                       . "1. MySQL isn't accepting remote connections\n"
+                       . "2. The user lacks remote access privileges\n"
+                       . "3. Port 3306 isn't open in firewall rules";
             }
             
-            echo "✅ Connected to MySQL " . \$conn->server_version . " in " . 
-                round(microtime(true)-\$start, 2) . "s\n";
-            
-            \$conn->close();
-        } catch (Exception \$e) {
-            file_put_contents('php://stderr', "❌ ERROR: " . \$e->getMessage() . "\n");
-            
-            // Additional diagnostics
-            \$error = error_get_last();
-            if (\$error) {
-                file_put_contents('php://stderr', "Last PHP error: " . print_r(\$error, true) . "\n");
-            }
-            
+            file_put_contents('php://stderr', "❌ CONNECTION FAILED:\n$error\n");
             exit(1);
         }
-        ENDOFPHP
+        
+        echo "\n⏱️ Total time: " . round(microtime(true)-$start, 3) . "s\n";
+        echo "✅ All connection tests passed!";
+        PHPCODE
+
+        php mysql_test.php
