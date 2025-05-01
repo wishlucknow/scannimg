@@ -8,40 +8,67 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Setup PHP
+    - name: Setup PHP with MySQLi
       uses: shivammathur/setup-php@v2
       with:
         php-version: '8.2'
         extensions: mysqli
 
-    - name: Test database connection
+    - name: Debug network connectivity
+      env:
+        DB_HOST: ${{ secrets.DB_HOST }}
+      run: |
+        echo "--- Network Diagnostics ---"
+        echo "Testing connection to MySQL host..."
+        ping -c 4 $DB_HOST || echo "Ping failed"
+        echo "Testing MySQL port (3306)..."
+        nc -zvw3 $DB_HOST 3306 || echo "Port test failed"
+        echo "--- End Diagnostics ---"
+
+    - name: Verify environment variables
+      run: |
+        echo "--- Environment Variables ---"
+        echo "DB_HOST: $DB_HOST"
+        echo "DB_USER: $DB_USER"
+        echo "DB_NAME: $DB_NAME"
+        echo "--- End Variables ---"
+      env:
+        DB_HOST: ${{ secrets.DB_HOST }}
+        DB_USER: ${{ secrets.DB_USER }}
+        DB_NAME: ${{ secrets.DB_NAME }}
+
+    - name: Test MySQL connection
       env:
         DB_HOST: ${{ secrets.DB_HOST }}
         DB_USER: ${{ secrets.DB_USER }}
         DB_PASS: ${{ secrets.DB_PASS }}
         DB_NAME: ${{ secrets.DB_NAME }}
       run: |
-        # Create connection test script without escaping $
-        cat << 'EOF' > connection_test.php
-        <?php
+        php -r '
+        $start = microtime(true);
         try {
+            echo "⌛ Attempting to connect to MySQL at " . getenv("DB_HOST") . "...\n";
+            
             $conn = new mysqli(
                 getenv("DB_HOST"),
                 getenv("DB_USER"),
                 getenv("DB_PASS"),
-                getenv("DB_NAME")
+                getenv("DB_NAME"),
+                3306, // Explicit port
+                30    // Connection timeout in seconds
             );
             
             if ($conn->connect_error) {
-                throw new Exception("Connection failed: " . $conn->connect_error);
+                throw new Exception("Connection failed after " . 
+                    round(microtime(true)-$start, 2) . "s: " . $conn->connect_error);
             }
-            echo "✅ Successfully connected to MySQL server!\n";
-            echo "MySQL version: " . $conn->server_version . "\n";
             
-            $result = $conn->query("SHOW TABLES");
-            echo "Tables in database:\n";
-            while ($row = $result->fetch_array()) {
-                echo "- " . $row[0] . "\n";
+            echo "✅ Connected to MySQL " . $conn->server_version . " in " . 
+                round(microtime(true)-$start, 2) . "s\n";
+            
+            // Simple test query
+            if ($result = $conn->query("SELECT 1+1 AS test")) {
+                echo "Test query result: " . $result->fetch_assoc()["test"] . "\n";
             }
             
             $conn->close();
@@ -49,14 +76,14 @@ jobs:
             file_put_contents("php://stderr", "❌ ERROR: " . $e->getMessage() . "\n");
             exit(1);
         }
-        EOF
+        '
 
-        # Run the test script
-        php connection_test.php
-        
-        # Run your actual db.php script
-        if [ -f "db.php" ]; then
-          php db.php
-        else
-          echo "::warning::db.php not found, skipping"
-        fi
+    - name: Run main script
+      if: success()
+      env:
+        DB_HOST: ${{ secrets.DB_HOST }}
+        DB_USER: ${{ secrets.DB_USER }}
+        DB_PASS: ${{ secrets.DB_PASS }}
+        DB_NAME: ${{ secrets.DB_NAME }}
+      run: |
+        php db.php
