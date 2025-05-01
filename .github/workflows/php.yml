@@ -21,32 +21,32 @@ jobs:
         DB_PASS: ${{ secrets.DB_PASS }}
         DB_NAME: ${{ secrets.DB_NAME }}
       run: |
-        # Create connection test script
+        # Create connection test script without escaping $
         cat << 'EOF' > connection_test.php
         <?php
         try {
-            \$conn = new mysqli(
+            $conn = new mysqli(
                 getenv("DB_HOST"),
                 getenv("DB_USER"),
                 getenv("DB_PASS"),
                 getenv("DB_NAME")
             );
             
-            if (\$conn->connect_error) {
-                throw new Exception("Connection failed: " . \$conn->connect_error);
+            if ($conn->connect_error) {
+                throw new Exception("Connection failed: " . $conn->connect_error);
             }
             echo "✅ Successfully connected to MySQL server!\n";
-            echo "MySQL version: " . \$conn->server_version . "\n";
+            echo "MySQL version: " . $conn->server_version . "\n";
             
-            \$result = \$conn->query("SHOW TABLES");
+            $result = $conn->query("SHOW TABLES");
             echo "Tables in database:\n";
-            while (\$row = \$result->fetch_array()) {
-                echo "- " . \$row[0] . "\n";
+            while ($row = $result->fetch_array()) {
+                echo "- " . $row[0] . "\n";
             }
             
-            \$conn->close();
-        } catch (Exception \$e) {
-            file_put_contents("php://stderr", "❌ ERROR: " . \$e->getMessage() . "\n");
+            $conn->close();
+        } catch (Exception $e) {
+            file_put_contents("php://stderr", "❌ ERROR: " . $e->getMessage() . "\n");
             exit(1);
         }
         EOF
