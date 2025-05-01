@@ -21,8 +21,8 @@ jobs:
         DB_PASS: ${{ secrets.DB_PASS }}
         DB_NAME: ${{ secrets.DB_NAME }}
       run: |
-        # Save PHP code to a temporary file
-        cat << 'PHPCODE' > db.php
+        # Create connection test script
+        cat << 'EOF' > connection_test.php
         <?php
         try {
             \$conn = new mysqli(
@@ -49,10 +49,14 @@ jobs:
             file_put_contents("php://stderr", "❌ ERROR: " . \$e->getMessage() . "\n");
             exit(1);
         }
-        PHPCODE
+        EOF
 
         # Run the test script
-        php test_connection.php
+        php connection_test.php
         
-        # Run your actual script
-        php db.php
+        # Run your actual db.php script
+        if [ -f "db.php" ]; then
+          php db.php
+        else
+          echo "::warning::db.php not found, skipping"
+        fi
