@@ -1,27 +1,10 @@
-name: PHP MySQL Connection Test
+name: PHP Remote MySQL Test
 
 on: [push, workflow_dispatch]
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: Nf1US9:b*
-          MYSQL_DATABASE: u800183464_familyhub
-          MYSQL_USER: u800183464_familyhub
-          MYSQL_PASSWORD: Nf1US9:b*
-        ports:
-          - localhost:localhost
-        options: >-
-          --health-cmd="mysqladmin ping -h localhost -u root -proot"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-
     steps:
     - uses: actions/checkout@v4
     
@@ -30,37 +13,28 @@ jobs:
       with:
         php-version: '8.2'
         extensions: mysqli
-    
-    - name: Verify MySQL connection
-      run: |
-        echo "Waiting for MySQL to start..."
-        for i in {1..30}; do
-          if mysqladmin ping -h"127.0.0.1" -u"root" -proot --silent; then
-            echo "MySQL is ready!"
-            break
-          fi
-          echo "Waiting... (attempt $i/30)"
-          sleep 2
-        done
-        
-        echo "Creating database structure..."
-        mysql -h 127.0.0.1 -u root -proot testdb -e "CREATE TABLE IF NOT EXISTS test_table (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(50));"
-        mysql -h 127.0.0.1 -u root -proot testdb -e "INSERT INTO test_table (name) VALUES ('test1'), ('test2');"
-    
-    - name: Run PHP script
+
+    - name: Test remote database connection
       env:
-        DB_HOST: 127.0.0.1
-        DB_USER: testuser
-        DB_PASSWORD: testpass
-        DB_NAME: testdb
+        DB_HOST: ${{ secrets.DB_HOST }}
+        DB_USER: ${{ secrets.DB_USER }}
+        DB_PASS: ${{ secrets.DB_PASS }}
+        DB_NAME: ${{ secrets.DB_NAME }}
       run: |
-        echo "Testing database connection from PHP..."
         php -r '
-          $conn = new mysqli(getenv("DB_HOST"), getenv("DB_USER"), getenv("DB_PASSWORD"), getenv("DB_NAME"));
-          if ($conn->connect_error) die("Connection failed: " . $conn->connect_error);
-          echo "Success! Connected to MySQL ".$conn->server_version."\n";
+          $conn = new mysqli(
+            getenv("DB_HOST"),
+            getenv("DB_USER"),
+            getenv("DB_PASS"),
+            getenv("DB_NAME")
+          );
+          
+          if ($conn->connect_error) {
+            file_put_contents("php://stderr", "Connection failed: " . $conn->connect_error . "\n");
+            exit(1);
+          }
+          echo "Connected to remote MySQL!\n";
           $conn->close();
         '
         
-        echo "Running db.php..."
         php db.php
