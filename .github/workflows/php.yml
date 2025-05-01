@@ -1,5 +1,32 @@
-- name: Debug - Show full directory structure
-  run: |
-    echo "Current directory: $(pwd)"
-    echo "Complete file structure:"
-    find . -type f
+name: Run PHP and Python Files
+
+on: [push]
+
+jobs:
+  run-scripts:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    # List all files (for debugging)
+    - name: Show directory contents
+      run: ls -la
+    
+    # Run PHP files (they're in root)
+    - name: Run db.php
+      run: php db.php
+      
+    - name: Run index.php
+      run: php index.php
+      
+    - name: Run search.php
+      run: php search.php
+    
+    # Run Python file
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Run compare.py
+      run: python compare.py
