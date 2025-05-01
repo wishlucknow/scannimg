@@ -1,32 +1,66 @@
-name: Run PHP and Python Files
+name: PHP MySQL Connection Test
 
-on: [push]
+on: [push, workflow_dispatch]
 
 jobs:
-  run-scripts:
+  test:
     runs-on: ubuntu-latest
+    
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: Nf1US9:b*
+          MYSQL_DATABASE: u800183464_familyhub
+          MYSQL_USER: u800183464_familyhub
+          MYSQL_PASSWORD: Nf1US9:b*
+        ports:
+          - localhost:localhost
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -u root -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
     steps:
     - uses: actions/checkout@v4
     
-    # List all files (for debugging)
-    - name: Show directory contents
-      run: ls -la
-    
-    # Run PHP files (they're in root)
-    - name: Run db.php
-      run: php db.php
-      
-    - name: Run index.php
-      run: php index.php
-      
-    - name: Run search.php
-      run: php search.php
-    
-    # Run Python file
-    - name: Set up Python
-      uses: actions/setup-python@v4
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
       with:
-        python-version: '3.10'
+        php-version: '8.2'
+        extensions: mysqli
     
-    - name: Run compare.py
-      run: python compare.py
+    - name: Verify MySQL connection
+      run: |
+        echo "Waiting for MySQL to start..."
+        for i in {1..30}; do
+          if mysqladmin ping -h"127.0.0.1" -u"root" -proot --silent; then
+            echo "MySQL is ready!"
+            break
+          fi
+          echo "Waiting... (attempt $i/30)"
+          sleep 2
+        done
+        
+        echo "Creating database structure..."
+        mysql -h 127.0.0.1 -u root -proot testdb -e "CREATE TABLE IF NOT EXISTS test_table (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(50));"
+        mysql -h 127.0.0.1 -u root -proot testdb -e "INSERT INTO test_table (name) VALUES ('test1'), ('test2');"
+    
+    - name: Run PHP script
+      env:
+        DB_HOST: 127.0.0.1
+        DB_USER: testuser
+        DB_PASSWORD: testpass
+        DB_NAME: testdb
+      run: |
+        echo "Testing database connection from PHP..."
+        php -r '
+          $conn = new mysqli(getenv("DB_HOST"), getenv("DB_USER"), getenv("DB_PASSWORD"), getenv("DB_NAME"));
+          if ($conn->connect_error) die("Connection failed: " . $conn->connect_error);
+          echo "Success! Connected to MySQL ".$conn->server_version."\n";
+          $conn->close();
+        '
+        
+        echo "Running db.php..."
+        php db.php
