@@ -104,4 +104,4 @@ jobs:
         exit(1);
         EOF
         
-        php hostinger_connect.php
+        php db.php
