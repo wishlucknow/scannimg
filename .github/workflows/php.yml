@@ -33,75 +33,26 @@ jobs:
         DB_USER: ${{ secrets.DB_USER }}
         DB_PASS: ${{ secrets.DB_PASS }}
         DB_NAME: ${{ secrets.DB_NAME }}
+        DB_HOST: srv658.hstgr.io
       run: |
-        cat > hostinger_connect.php <<'EOF'
-        <?php
-        $host = 'srv658.hstgr.io';
-        $user = getenv('DB_USER');
-        $pass = getenv('DB_PASS');
-        $db   = getenv('DB_NAME');
-        
-        function try_connect($host, $user, $pass, $db, $port, $type) {
-            $start = microtime(true);
-            try {
-                if ($type === 'mysqli') {
-                    $conn = new mysqli($host, $user, $pass, $db, $port, 10);
-                    if ($conn->connect_error) throw new Exception($conn->connect_error);
-                    $version = $conn->server_version;
-                    $conn->close();
-                } else {
-                    $conn = new PDO(
-                        "mysql:host=$host;port=$port;dbname=$db",
-                        $user,
-                        $pass,
-                        [PDO::ATTR_TIMEOUT => 10, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
-                    );
-                    $version = $conn->getAttribute(PDO::ATTR_SERVER_VERSION);
-                }
-                return [
-                    'status' => '✅',
-                    'time' => round(microtime(true)-$start, 3).'s',
-                    'version' => $version
-                ];
-            } catch (Exception $e) {
-                return [
-                    'status' => '❌',
-                    'error' => $e->getMessage()
-                ];
-            }
-        }
+        php -r '
+        $host = getenv("DB_HOST");
+        $user = getenv("DB_USER");
+        $pass = getenv("DB_PASS");
+        $db   = getenv("DB_NAME");
 
-        echo "🛠️ Testing all possible Hostinger configurations:\n";
-        echo "------------------------------------------------\n";
-        
-        $tests = [
-            ['mysqli', 3306],
-            ['pdo', 3306],
-            ['mysqli', 3307],  # Hostinger alternate port
-            ['pdo', 3307],
-            ['mysqli', 3308],  # Hostinger sometimes uses this
-            ['pdo', 3308]
-        ];
-        
-        foreach ($tests as $test) {
-            list($type, $port) = $test;
-            $result = try_connect($host, $user, $pass, $db, $port, $type);
-            echo "$type port $port: {$result['status']}";
-            if ($result['status'] === '✅') {
-                echo " ({$result['time']}) MySQL {$result['version']}\n";
-                exit(0);
-            } else {
-                echo " - {$result['error']}\n";
+        try {
+            $conn = new mysqli($host, $user, $pass, $db);
+            if ($conn->connect_error) {
+                throw new Exception($conn->connect_error);
             }
+            echo "✅ Connection successful\n";
+            $conn->close();
+        } catch (Exception $e) {
+            echo "❌ Connection failed: " . $e->getMessage() . "\n";
         }
-        
-        echo "\n🔥 All connection attempts failed. Hostinger-specific solutions:\n";
-        echo "1. Login to hPanel → Databases → Remote MySQL\n";
-        echo "2. Add these IP ranges to whitelist:\n";
-        echo "   - 172.16.0.0/12\n   - 192.30.252.0/22\n";
-        echo "3. Ensure your user has 'All privileges' in phpMyAdmin\n";
-        echo "4. Contact Hostinger support with this error output\n";
-        exit(1);
-        EOF
-        
-        php db.php
+        '
+
+    - name: Run index.php
+      run: |
+        php index.php
